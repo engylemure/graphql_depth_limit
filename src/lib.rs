@@ -1,3 +1,30 @@
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
+//! Utilites for graphql query depth analysis
+//!
+//! graphql_depth_limit provide utilities for easy identification of possible malicious queries (high depth).
+//!
+//! # Quick Start
+//!
+//! example 
+//! ```
+//! use graphql_depth_limit::QueryDepthAnalyzer;
+//! 
+//! let query = r#"
+//!     query {
+//!         hello {
+//!             world
+//!         }
+//!     }
+//! "#;
+//! let analyzer = QueryDepthAnalyzer::new(query, vec![], |_a, _b| true).unwrap();
+//! let verify_result = analyzer.verify(5);
+//! 
+//! ```
 use std::collections::HashMap;
 use graphql_parser::parse_query;
 use graphql_parser::query::*;
@@ -5,42 +32,39 @@ use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::slice::Iter;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ExceedMaxDepth {
     limit: usize,
-    depth: usize,
 }
 
-#[derive(Debug)]
-pub enum DepthLimitError {
-    Parse(ParseError),
-    Exceed(ExceedMaxDepth),
-}
-
-impl Display for DepthLimitError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        match self {
-            DepthLimitError::Parse(parse_error) => write!(f, "{}", parse_error),
-            DepthLimitError::Exceed(exceed_error) => write!(f, "{}", exceed_error)
+impl ExceedMaxDepth {
+    pub fn new(limit: usize) -> Self {
+        Self {
+            limit
         }
     }
 }
+
 impl Display for ExceedMaxDepth {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "your query exceeded the maximum depth, depth: {}, limit: {}", self.depth, self.limit)
+        write!(f, "your query exceeded the depth limit: {}", self.limit)
     }
 }
 
 impl Error for ExceedMaxDepth {}
 
 pub struct QueryDepthAnalyzer<T> where T: Fn(OperationDefinition, usize) -> bool {
+    /// Fragments declared on a query
     fragments: HashMap<String, FragmentDefinition>,
+    /// Operation to be called on a OperationDefinition with the related depth
     callback_on_op_definition: T,
+    /// The query Document
     document: Document,
+    /// Vec of names to ignore Fields
     fields_name_to_ignore: Vec<String>,
 }
 
-/// Map the FragmentDefinition with the name
+/// Map the FragmentDefinition with the name from a Iter Definition
 fn fragments_from_definitions(definitions: Iter<'_, Definition>) -> HashMap<String, FragmentDefinition> {
     definitions
         .fold(HashMap::new(), |mut acc, val| {
@@ -53,6 +77,24 @@ fn fragments_from_definitions(definitions: Iter<'_, Definition>) -> HashMap<Stri
 
 
 impl<T> QueryDepthAnalyzer<T> where T: Fn(OperationDefinition, usize) -> bool {
+    /// Constructor
+    /// # Example
+    /// 
+    /// ```
+    ///     use graphql_depth_limit::QueryDepthAnalyzer;
+    /// 
+    ///     let query = r#"
+    ///         query {
+    ///             hello {
+    ///                 world
+    ///             }
+    ///         }
+    ///     "#;
+    ///     let new = QueryDepthAnalyzer::new(query, vec![], |_a, _b| true);
+    /// ```
+    /// 
+    /// # Errors
+    /// 
     pub fn new(query: &str, fields_name_to_ignore: Vec<String>, callback: T) -> Result<Self, ParseError> {
         let document = parse_query(query)?;
         let fragments = fragments_from_definitions(document.definitions.iter());
@@ -63,14 +105,17 @@ impl<T> QueryDepthAnalyzer<T> where T: Fn(OperationDefinition, usize) -> bool {
             fields_name_to_ignore,
         })
     }
+    
 
-    fn determine_depth_of_selection_set(&self, selection_set: &SelectionSet, depth: usize, limit: usize) -> Result<usize, DepthLimitError> {
+    /// Computes the greatest depth from a SelectionSet with initial depth and depth limit
+    /// if the limit does not exceed
+    fn determine_depth_of_selection_set(&self, selection_set: &SelectionSet, depth: usize, limit: usize) -> Result<usize, ExceedMaxDepth> {
         let mut greater_depth: usize = depth;
         for item in selection_set.items.iter() {
             let depth = self.determine_depth_of_selection(item, depth, limit);
             match depth {
                 Ok(val) => {
-                    if val > limit { return Err(DepthLimitError::Exceed(ExceedMaxDepth { limit, depth: val })); }
+                    if val > limit { return Err(ExceedMaxDepth::new(limit)); }
                     if val > greater_depth { greater_depth = val; }
                 }
                 Err(err) => return Err(err)
@@ -79,7 +124,9 @@ impl<T> QueryDepthAnalyzer<T> where T: Fn(OperationDefinition, usize) -> bool {
         Ok(greater_depth)
     }
 
-    fn determine_depth_of_selection(&self, selection: &Selection, depth: usize, limit: usize) -> Result<usize, DepthLimitError> {
+    /// Computes the depth of a Selection with a initial depth and depth limit 
+    /// if the limit does not exceed
+    fn determine_depth_of_selection(&self, selection: &Selection, depth: usize, limit: usize) -> Result<usize, ExceedMaxDepth> {
         match selection {
             Selection::Field(f) => {
                 let should_ignore: bool = f.name.starts_with("__") || self.fields_name_to_ignore.contains(&f.name);
@@ -99,20 +146,28 @@ impl<T> QueryDepthAnalyzer<T> where T: Fn(OperationDefinition, usize) -> bool {
         }
     }
 
-    fn determine_depth_of_query(&self, query: &Query, depth: usize, limit: usize) -> Result<usize, DepthLimitError> {
+    /// Computes the depth of a Query with a initial depth and depth limit 
+    /// if the limit does not exceed
+    fn determine_depth_of_query(&self, query: &Query, depth: usize, limit: usize) -> Result<usize, ExceedMaxDepth> {
         self.determine_depth_of_selection_set(&query.selection_set, depth, limit)
     }
 
-    fn determine_depth_of_mutation(&self, mutation: &Mutation, depth: usize, limit: usize) -> Result<usize, DepthLimitError> {
+    /// Computes the depth of a Mutation with a initial depth and depth limit 
+    /// if the limit does not exceed
+    fn determine_depth_of_mutation(&self, mutation: &Mutation, depth: usize, limit: usize) -> Result<usize, ExceedMaxDepth> {
         self.determine_depth_of_selection_set(&mutation.selection_set, depth, limit)
     }
 
-    fn determine_depth_of_subscription(&self, subscription: &Subscription, depth: usize, limit: usize) -> Result<usize, DepthLimitError> {
+    /// Computes the depth of a Subscription with a initial depth and depth limit 
+    /// if the limit does not exceed
+    fn determine_depth_of_subscription(&self, subscription: &Subscription, depth: usize, limit: usize) -> Result<usize, ExceedMaxDepth> {
         self.determine_depth_of_selection_set(&subscription.selection_set, depth, limit)
     }
 
-    pub fn verify(&self, limit: usize) -> Result<usize, DepthLimitError> {
-        let mut depth: Result<usize, DepthLimitError> = Ok(0);
+    /// Computes the depth of the query Document 
+    /// considering a limit
+    pub fn verify(&self, limit: usize) -> Result<usize, ExceedMaxDepth> {
+        let mut depth: Result<usize, ExceedMaxDepth> = Ok(0);
         for definition in self.document.definitions.iter() {
             let depth_result = if let Definition::Operation(def) = definition {
                 let result = match def {
@@ -141,15 +196,13 @@ impl<T> QueryDepthAnalyzer<T> where T: Fn(OperationDefinition, usize) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::{QueryDepthAnalyzer, DepthLimitError};
-    
+    use graphql_parser::query::{OperationDefinition, ParseError};
+    use crate::{QueryDepthAnalyzer, ExceedMaxDepth};
+    type CallbackClojure = dyn Fn(OperationDefinition, usize) -> bool;
 
-    fn verify_result_from_analyzer(query: &str, limit: usize) -> Result<usize, DepthLimitError>{
-        match QueryDepthAnalyzer::new(query, vec![], |_a, _b| true) {
-            Ok(validator) => validator.verify(limit),
-            Err(val) => Err(DepthLimitError::Parse(val))
-        }
-    }
+    fn default_analyzer(query: &str) -> Result<QueryDepthAnalyzer<Box<CallbackClojure>>, ParseError> {
+        QueryDepthAnalyzer::new(query, vec![], Box::new(|_a, _b| true))
+    } 
 
     #[test]
     fn verify_ok() {
@@ -162,7 +215,10 @@ mod tests {
               }
             }
         "#;
-        let verify_result = verify_result_from_analyzer(query, 5);
+        let analyzer = default_analyzer(query);
+        assert!(analyzer.is_ok());
+        let analyzer = analyzer.unwrap();
+        let verify_result = analyzer.verify(5);
         assert_eq!(verify_result.is_ok(), true)
     }
 
@@ -177,12 +233,14 @@ mod tests {
               }
             }
         "#;
-        let depth = verify_result_from_analyzer(query, 5);
-        match depth {
-            Ok(val) => assert_eq!(val, 3),
+        let analyzer = default_analyzer(query);
+        assert!(analyzer.is_ok());
+        let analyzer = analyzer.unwrap();
+        let verify_result = analyzer.verify(5);
+        match verify_result {
+            Ok(depth) => assert_eq!(depth, 3),
             Err(_err) => assert!(false)
         }
-
     }
 
     #[test]
@@ -202,7 +260,13 @@ mod tests {
               }
             }
         "#;
-        let verify_result = verify_result_from_analyzer(query, 5);
-        assert_eq!(verify_result.is_err(), true)
+        let analyzer = default_analyzer(query);
+        assert!(analyzer.is_ok());
+        let analyzer = analyzer.unwrap();
+        let verify_result = analyzer.verify(5);
+        match verify_result {
+            Ok(_) => assert!(false),
+            Err(err) => assert_eq!(err, ExceedMaxDepth::new(5))
+        }
     }
 }
