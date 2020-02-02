@@ -5,7 +5,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-graphql_depth_limit = "1"
+graphql_depth_limit = "0.1.0"
 ```
 
 and this to your crate root (if you're using Rust 2015):

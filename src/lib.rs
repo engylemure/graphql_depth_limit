@@ -17,9 +17,17 @@ pub enum DepthLimitError {
     Exceed(ExceedMaxDepth),
 }
 
+impl Display for DepthLimitError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            DepthLimitError::Parse(parse_error) => write!(f, "{}", parse_error),
+            DepthLimitError::Exceed(exceed_error) => write!(f, "{}", exceed_error)
+        }
+    }
+}
 impl Display for ExceedMaxDepth {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "your query exceeded the maximum depth limit {:?}", self)
+        write!(f, "your query exceeded the maximum depth, depth: {}, limit: {}", self.depth, self.limit)
     }
 }
 
