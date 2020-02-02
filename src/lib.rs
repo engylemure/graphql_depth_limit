@@ -33,7 +33,7 @@ impl Display for ExceedMaxDepth {
 
 impl Error for ExceedMaxDepth {}
 
-pub struct ValidateQueryDepth<T> where T: Fn(OperationDefinition, usize) -> bool {
+pub struct QueryDepthAnalyzer<T> where T: Fn(OperationDefinition, usize) -> bool {
     fragments: HashMap<String, FragmentDefinition>,
     callback_on_op_definition: T,
     document: Document,
@@ -52,7 +52,7 @@ fn fragments_from_definitions(definitions: Iter<'_, Definition>) -> HashMap<Stri
 }
 
 
-impl<T> ValidateQueryDepth<T> where T: Fn(OperationDefinition, usize) -> bool {
+impl<T> QueryDepthAnalyzer<T> where T: Fn(OperationDefinition, usize) -> bool {
     pub fn new(query: &str, fields_name_to_ignore: Vec<String>, callback: T) -> Result<Self, ParseError> {
         let document = parse_query(query)?;
         let fragments = fragments_from_definitions(document.definitions.iter());
@@ -141,11 +141,11 @@ impl<T> ValidateQueryDepth<T> where T: Fn(OperationDefinition, usize) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ValidateQueryDepth, DepthLimitError};
+    use crate::{QueryDepthAnalyzer, DepthLimitError};
     
 
-    fn verify_result_from_base_validator(query: &str, limit: usize) -> Result<usize, DepthLimitError>{
-        match ValidateQueryDepth::new(query, vec![], |_a, _b| true) {
+    fn verify_result_from_analyzer(query: &str, limit: usize) -> Result<usize, DepthLimitError>{
+        match QueryDepthAnalyzer::new(query, vec![], |_a, _b| true) {
             Ok(validator) => validator.verify(limit),
             Err(val) => Err(DepthLimitError::Parse(val))
         }
@@ -162,7 +162,7 @@ mod tests {
               }
             }
         "#;
-        let verify_result = verify_result_from_base_validator(query, 5);
+        let verify_result = verify_result_from_analyzer(query, 5);
         assert_eq!(verify_result.is_ok(), true)
     }
 
@@ -177,7 +177,7 @@ mod tests {
               }
             }
         "#;
-        let depth = verify_result_from_base_validator(query, 5);
+        let depth = verify_result_from_analyzer(query, 5);
         match depth {
             Ok(val) => assert_eq!(val, 3),
             Err(_err) => assert!(false)
@@ -202,7 +202,7 @@ mod tests {
               }
             }
         "#;
-        let verify_result = verify_result_from_base_validator(query, 5);
+        let verify_result = verify_result_from_analyzer(query, 5);
         assert_eq!(verify_result.is_err(), true)
     }
 }

@@ -29,7 +29,7 @@ fn main() {
                   }
                 }
             "#;
-    let depth = match ValidateQueryDepth::new(query, vec![], |_a, _b| true) {
+    let depth = match QueryDepthAnalyzer::new(query, vec![], |_a, _b| true) {
         Ok(validator) => validator.verify(limit),
         Err(val) => Err(DepthLimitError::Parse(val))
     };
