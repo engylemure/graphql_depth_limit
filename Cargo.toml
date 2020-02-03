@@ -1,6 +1,6 @@
 [package]
 name = "graphql_depth_limit"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["engylemure <jordao.rosario01@gmail.com>"]
 edition = "2018"
 readme = "README.md"
