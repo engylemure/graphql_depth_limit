@@ -43,6 +43,10 @@ impl ExceedMaxDepth {
             limit
         }
     }
+
+    pub fn limit(&self) -> usize {
+        self.limit
+    }
 }
 
 impl Display for ExceedMaxDepth {
@@ -77,6 +81,22 @@ fn fragments_from_definitions(definitions: Iter<'_, Definition>) -> HashMap<Stri
 
 
 impl<T> QueryDepthAnalyzer<T> where T: Fn(OperationDefinition, usize) -> bool {
+    pub fn fragments(&self) -> &HashMap<String, FragmentDefinition> {
+        &self.fragments
+    }
+
+    pub fn callback_on_op_definition(&self) -> &T {
+        &self.callback_on_op_definition
+    }
+
+    pub fn document(&self) -> &Document {
+        &self.document
+    }
+
+    pub fn fields_name_to_ignore(&self) -> &Vec<String> {
+        &self.fields_name_to_ignore
+    }
+
     /// Constructor
     /// # Example
     /// 

@@ -3,8 +3,14 @@ name = "graphql_depth_limit"
 version = "0.1.0"
 authors = ["engylemure <jordao.rosario01@gmail.com>"]
 edition = "2018"
-
+readme = "README.md"
+description = """
+    A small lib for graphql depth limit analysis on graphql queries.
+"""
+repository =  "https://github.com/engylemure/graphql_depth_limit"
+license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+keywords = ["graphql"]
 
 [dependencies]
 graphql-parser = "0.2.3"
